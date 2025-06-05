@@ -37,6 +37,11 @@ on:
         description: 'Namespace for the identifiers'
         required: true
         type: string
+      artefact_name:
+        description: 'Name of the artefact that is generated'
+        required: false
+        type: string
+        default: 'data.yaml'
     secrets:
       token:
         description: 'GitHub token for repository access'
@@ -138,7 +143,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: generated-vocabulary-files
+          name: data.yaml
           path: |
             ${{ inputs.output || inputs.data }}
             *.log

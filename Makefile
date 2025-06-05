@@ -68,3 +68,9 @@ run-new:
 		--namespace $(NAMESPACE) \
 		--output $(OUTPUT_FILE) \
 		--verbose
+
+.PHONY: test-output
+test-output:
+	@echo "Loading newly generated schema into linkml..."
+	curl -L -o tests/peh.yaml https://raw.githubusercontent.com/eu-parc/parco-hbm/main/linkml/schema/peh.yaml
+	linkml-convert -s tests/peh.yaml output.yaml
