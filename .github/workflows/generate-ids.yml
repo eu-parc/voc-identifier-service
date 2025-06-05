@@ -1,0 +1,146 @@
+name: Generate ids for vocabulary terms
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git reference (branch, tag, or commit SHA) to checkout'
+        required: true
+        type: string
+      data:
+        description: 'Path to the data file containing entities to publish'
+        required: true
+        type: string
+      target_name:
+        description: 'Name of the target entity list in the data file'
+        required: true
+        type: string
+      parent_key:
+        description: 'Parent key to be provided for topological sort'
+        type: string
+        required: false
+        default: ''
+      output:
+        description: 'Output path for modified yaml file'
+        type: string
+        required: false
+        default: ''
+      preflabel:
+        description: 'Name of field used to create identifier using hash function'
+        required: true
+        type: string
+      type_prefix:
+        description: 'Default part that is added to identifier following namespace'
+        required: true
+        type: string
+      namespace:
+        description: 'Namespace for the identifiers'
+        required: true
+        type: string
+    secrets:
+      token:
+        description: 'GitHub token for repository access'
+        required: false
+
+jobs:
+  generate-ids:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.12.1
+        with:
+          access_token: ${{ github.token }}
+          
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.token || github.token }}
+          fetch-depth: 1
+       
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+       
+      - name: Install dependencies
+        run: |
+          pip install click pyyaml
+       
+      - name: Check if script exists in current branch
+        id: check-script
+        run: |
+          if [ -f "./scripts/generate_ids.py" ]; then
+            echo "script_exists=true" >> $GITHUB_OUTPUT
+            echo "script_path=./scripts/generate_ids.py" >> $GITHUB_OUTPUT
+            echo "Script found in repository"
+          else
+            echo "script_exists=false" >> $GITHUB_OUTPUT
+            echo "script_path=./generate_ids.py" >> $GITHUB_OUTPUT
+            echo "Script not found in repository, will download"
+          fi
+       
+      - name: Cache downloaded script
+        id: cache-script
+        if: steps.check-script.outputs.script_exists == 'false'
+        uses: actions/cache@v4
+        with:
+          path: ./generate_ids.py
+          key: generate-ids-script-v1-${{ hashFiles('.github/workflows/*.yml') }}
+          restore-keys: |
+            generate-ids-script-v1-
+                
+      - name: Download generate_ids.py
+        if: steps.check-script.outputs.script_exists == 'false' && steps.cache-script.outputs.cache-hit != 'true'
+        run: |
+          echo "Downloading script from eu-parc/voc-identifier-service repository..."
+          curl -fsSL -o generate_ids.py https://raw.githubusercontent.com/eu-parc/voc-identifier-service/main/scripts/generate_ids.py
+          chmod +x generate_ids.py
+          echo "Script downloaded successfully"
+       
+      - name: Validate script download
+        if: steps.check-script.outputs.script_exists == 'false'
+        run: |
+          if [ ! -f "./generate_ids.py" ]; then
+            echo "Error: Script download failed"
+            exit 1
+          fi
+          python3 -c "import ast; ast.parse(open('generate_ids.py').read())" || {
+            echo "Error: Downloaded script is not valid Python"
+            exit 1
+          }
+          echo "Script validation successful"
+       
+      - name: Generate ids
+        id: generate-ids
+        run: |
+          set -e
+          echo "Running ID generation with the following parameters:"
+          echo "  Data file: ${{ inputs.data }}"
+          echo "  Target: ${{ inputs.target_name }}"
+          echo "  Preflabel: ${{ inputs.preflabel }}"
+          echo "  Type prefix: ${{ inputs.type_prefix }}"
+          echo "  Namespace: ${{ inputs.namespace }}"
+          echo "  Parent key: ${{ inputs.parent_key }}"
+          echo "  Output: ${{ inputs.output }}"
+          
+          python3 ${{ steps.check-script.outputs.script_path }} \
+            --data "${{ inputs.data }}" \
+            --target "${{ inputs.target_name }}" \
+            --preflabel "${{ inputs.preflabel }}" \
+            --type-prefix "${{ inputs.type_prefix }}" \
+            --namespace "${{ inputs.namespace }}" \
+            ${{ inputs.parent_key && format('--parent-key "{0}"', inputs.parent_key) || '' }} \
+            ${{ inputs.output && format('--output "{0}"', inputs.output) || '' }} \
+            --verbose
+            
+      - name: Upload generated files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-vocabulary-files
+          path: |
+            ${{ inputs.output || inputs.data }}
+            *.log
+          retention-days: 30

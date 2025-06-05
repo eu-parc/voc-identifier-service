@@ -1,0 +1,22 @@
+name: Test generate-ids
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  test-workflow-nanopub-publish:
+    uses: ./.github/workflows/generate-ids.yml
+    with:
+      ref: ${{ github.ref }}
+      data: tests/data.yaml
+      target_name: matrices
+      parent_key: parent_matrix
+      preflabel: label
+      type_prefix: MA
+      namespace: https://w3id.org/peh/
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
